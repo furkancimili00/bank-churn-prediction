@@ -1,55 +1,65 @@
-🏦 Banka Müşteri Kayıp (Churn) Analiz Sistemi
-Bu proje, banka şube müdürlerinin ve portföy yöneticilerinin müşterilerin bankayı terk etme (churn) riskini tahmin etmeleri, bu riskin nedenlerini anlamaları ve finansal kaybı minimize edecek aksiyonlar almaları için geliştirilmiş uçtan uca (end-to-end) bir karar destek sistemidir.
+# 🏦 Banka Müşteri Kayıp (Churn) Analiz Paneli
 
-🚀 Canlı Demo
+![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-Modern_API-05998b.svg)
+![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B.svg)
+
+Bu proje, banka şube müdürlerinin ve portföy yöneticilerinin müşteri kaybını (churn) önceden tahmin etmeleri için geliştirilmiş **uçtan uca (end-to-end)** bir karar destek sistemidir. Sadece tahmin yapmakla kalmaz, tahminin nedenini açıklar ve çözüm yolları simüle eder.
+
+---
+
+## 🚀 Canlı Uygulama
 Uygulamayı tarayıcınızda hemen deneyin:
-🔗 [https://bank-churn-prediction-eaf.streamlit.app/]
-(Giriş Bilgileri: Kullanıcı: admin | Şifre: 123456)
+🔗 **[https://bank-churn-prediction-eaf.streamlit.app/]**
 
-✨ Temel Özellikler
-🔍 Akıllı Tahminleme: Random Forest algoritması kullanarak müşterilerin ayrılma olasılığını %86+ doğrulukla tahmin eder.
+> **🔐 Giriş Bilgileri:**
+> * **Kullanıcı Adı:** `admin`
+> * **Şifre:** `123456` 
 
-💡 Açıklanabilir AI (SHAP): Modelin neden "Riskli" dediğini şeffaf bir şekilde gösterir. Hangi faktörün (yaş, bakiye, aktiflik vb.) riski ne kadar artırdığını görselleştirir.
+---
 
-🧪 What-If (Aksiyon) Simülatörü: "Müşteriye kredi kartı verirsek risk ne kadar düşer?" gibi senaryoları canlı olarak test etmenizi sağlar.
+## ✨ Temel Özellikler
 
-💰 Finansal Etki Analizi (CLTV): Müşterinin banka için değerini ve ayrılması durumunda oluşacak Beklenen Kayıp (€) tutarını hesaplar.
+| Özellik | Açıklama |
+| :--- | :--- |
+| **🔍 Akıllı Tahmin** | Random Forest algoritması ile %86+ doğruluk oranı. |
+| **💡 Neden Analizi (SHAP)** | Modelin kararlarını (Yaş, Bakiye, Aktiflik vb.) şeffaf şekilde açıklar. |
+| **🧪 What-If Simülatörü** | Müşteriye uygulanacak aksiyonların (Kredi kartı verme vb.) risk üzerindeki etkisini ölçer. |
+| **💰 Finansal Etki (CLTV)** | Ayrılma riski durumunda bankanın uğrayacağı **Beklenen Kayıp (€)** tutarını hesaplar. |
+| **📂 Toplu Analiz** | CSV dosyası yükleyerek tüm portföyü finansal önceliğe göre sıralar. |
+| **🔒 Güvenli Giriş** | Streamlit Secrets altyapısı ile şifrelenmiş kurumsal giriş ekranı. |
 
-📂 Toplu Analiz & Önceliklendirme: Yüzlerce müşteriyi içeren CSV listelerini analiz eder ve şube müdürüne en çok para kaybettirecek müşteriden başlayarak bir arama listesi sunar.
+---
 
-🔒 Kurumsal Güvenlik: Şifre korumalı giriş ekranı ve güvenli "Secrets" yönetimi.
+## 🛠️ Teknoloji Yığını (Tech Stack)
 
-🛠️ Teknoloji Yığını (Tech Stack)
-Model: Scikit-Learn (Random Forest Classifier)
+* **Model:** Scikit-Learn (Random Forest)
+* **API:** FastAPI (Dockerized)
+* **Arayüz:** Streamlit
+* **Açıklanabilirlik:** SHAP (SHapley Additive exPlanations)
+* **Görselleştirme:** Plotly & Graph Objects
+* **Dağıtım:** Docker, GitHub, Streamlit Cloud
 
-API: FastAPI (Dockerized)
+---
 
-Frontend: Streamlit
+## 📦 Kurulum ve Çalıştırma
 
-Explainability: SHAP (SHapley Additive exPlanations)
-
-Visuals: Plotly & Graph Objects
-
-DevOps: Docker, GitHub Actions, Streamlit Cloud
-
-📦 Kurulum ve Çalıştırma
-
-Docker ile Çalıştırma (API)
-Sistemin motorunu (FastAPI) izole bir konteynerde çalıştırmak için:
-Bash
+### 1. Docker ile API Sunucusunu Başlatma
 docker build -t churn-api .
-docker run -p 8000:8000 churn-api
+docker run -d -p 8000:8000 churn-api
 
-Dashboard'u Çalıştırma
-Bash
+### 2. Dashboard'u Yerel Olarak Çalıştırma
 pip install -r requirements.txt
 streamlit run dashboard.py
 
-📊 Veri Seti Hakkında
-Projede kullanılan veri seti, 10.000 banka müşterisinin demografik ve finansal bilgilerini içermektedir. Model eğitimi sırasında Geography, Gender gibi kategorik veriler One-Hot Encoding ile, sayısal veriler ise StandardScaler ile işlenmiştir.
+## 👨‍💻 Mühendislik Yaklaşımı
+Bu proje bir bitirme tezi kapsamında geliştirilmiş olup şu mühendislik disiplinlerini içerir:
 
-👨‍💻 Yazar
-[Enis Çelik]
-4. Sınıf Bilgisayar Mühendisliği Öğrencisi
-[https://www.linkedin.com/in/eniscelik16/]
-[enisccelik@gmail.com]
+Mikroservis Mimarisi: FastAPI ve Docker ile API-Arayüz ayrımı.
+
+XAI (Açıklanabilir Yapay Zeka): Kara kutu modellerin (Black-box) karar mekanizmalarını görselleştirme.
+
+Güvenli Yazılım Geliştirme: Hassas verilerin Secrets Management ile yönetilmesi.
+
+Veri Odaklı Karar Destek: Tahminlerin finansal metriklerle (CLTV) birleştirilmesi.
