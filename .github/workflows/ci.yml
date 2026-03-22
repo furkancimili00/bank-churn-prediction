@@ -1,0 +1,45 @@
+---
+name: Churn Prediction ML Pipeline CI
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-and-evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run ML Data Ingestion
+        run: python src/ingest.py
+
+      - name: Run ML Preprocessing (SMOTE & Encoding)
+        run: python src/preprocess.py
+
+      - name: Run ML Model Training (XGBoost)
+        run: python src/train.py
+
+      - name: Strict Evaluate ML KPIs
+        run: python src/evaluate.py
+        # Fails if F1 < 0.85, ROC-AUC < 0.90, DIR > 1.2
+
+      - name: Run API Tests (pytest)
+        run: pytest tests.py -v
+        # Checks Flask /health, /predict, /predict_batch

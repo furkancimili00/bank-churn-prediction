@@ -1,7 +1,6 @@
 import json
 import pytest
 from api.app import app
-import pandas as pd
 
 @pytest.fixture
 def client():
