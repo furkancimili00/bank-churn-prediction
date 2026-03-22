@@ -1,12 +1,15 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
-import joblib
-import shap
+import requests
 import numpy as np
+import os
 
-# Sayfa ayarları her zaman en üstte olmalıdır
+# Configuration
 st.set_page_config(page_title="Banka Churn Risk Paneli", page_icon="🏦", layout="wide")
+
+# API URL
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # ==========================================
 # 1. OTURUM (SESSION) YÖNETİMİ
@@ -21,43 +24,35 @@ if 'base_risk' not in st.session_state:
 
 
 # ==========================================
-# 2. MODEL YÜKLEME (CACHE)
+# 2. API REQUEST FUNCTION
 # ==========================================
-@st.cache_resource
-def load_local_model():
+def make_prediction_api(data_dict):
+    """
+    Decoupled prediction mechanism for a single row.
+    Sends a POST request to the Flask API.
+    """
     try:
-        pack = joblib.load('churn_thesis_model.pkl')
-        return pack['model'], pack['scaler'], pack['features']
-    except Exception as e:
-        st.error(f"Model dosyası yüklenemedi: {e}")
-        return None, None, None
+        response = requests.post(f"{API_URL}/predict", json=data_dict, timeout=5)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"API Hatası: {e}")
+        return None
 
-local_model, local_scaler, expected_features = load_local_model()
-
-# TAHMİN FONKSİYONU (API YERİNE BURAYI KULLANACAĞIZ)
-def make_prediction(data_dict):
-    df_input = pd.DataFrame([data_dict])
-    # Kategorik verileri sayısal formata çeviriyoruz (One-Hot Encoding)
-    df_input = pd.get_dummies(df_input, drop_first=True)
-    # Eksik sütunları (expected_features) 0 ile dolduruyoruz
-    for col in expected_features:
-        if col not in df_input.columns:
-            df_input[col] = 0
-    df_input = df_input[expected_features]
-    
-    # Scaling ve Tahmin
-    scaled_input = local_scaler.transform(df_input)
-    prob = local_model.predict_proba(scaled_input)[0][1]
-    pred = int(prob > 0.5)
-    
-    return {
-        "churn_tahmini": pred,
-        "churn_ihtimali": float(prob),
-        "risk_seviyesi": "Yüksek" if prob > 0.7 else "Orta" if prob > 0.4 else "Düşük"
-    }
+def make_batch_prediction_api(data_list):
+    """
+    Decoupled prediction mechanism for multiple rows.
+    """
+    try:
+        response = requests.post(f"{API_URL}/predict_batch", json=data_list, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Toplu API Hatası: {e}")
+        return None
 
 # ==========================================
-# 3. GİRİŞ (LOGIN) EKRANI FONKSİYONU
+# 3. GİRİŞ (LOGIN) EKRANI
 # ==========================================
 def login_screen():
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -68,15 +63,22 @@ def login_screen():
         username = st.text_input("Kullanıcı Adı")
         password = st.text_input("Şifre", type="password")
         if st.button("Sisteme Giriş Yap", use_container_width=True):
-            if username == st.secrets["auth"]["username"] and password == st.secrets["auth"]["password"]:
-                st.session_state.logged_in = True
-                st.success("Giriş Başarılı!")
-                st.rerun()
-            else:
-                st.error("❌ Hatalı kullanıcı adı veya şifre!")
+            try:
+                # Use secrets exclusively for security
+                secret_user = st.secrets["auth"]["username"]
+                secret_pass = st.secrets["auth"]["password"]
+                if username == secret_user and password == secret_pass:
+                    st.session_state.logged_in = True
+                    st.success("Giriş Başarılı!")
+                    st.rerun()
+                else:
+                    st.error("❌ Hatalı kullanıcı adı veya şifre!")
+            except Exception as e:
+                # If no secrets exist, inform the user how to set them up
+                st.error("Giriş bilgileri yapılandırılamadı. Lütfen .streamlit/secrets.toml dosyasını kontrol edin.")
 
 # ==========================================
-# 4. ANA PANEL (DASHBOARD) FONKSİYONU
+# 4. ANA PANEL (DASHBOARD)
 # ==========================================
 def main_dashboard():
     st.sidebar.title("Yönetici Menüsü")
@@ -88,7 +90,7 @@ def main_dashboard():
     st.title("🏦 Şube Müdürü Müşteri Risk Analiz Paneli")
     tab1, tab2, tab3 = st.tabs(["👤 Tekil Müşteri Analizi", "🧪 What-If Simülatörü", "📂 Toplu Analiz (CLTV Öncelikli)"])
 
-    # --- SEKM 1: TEKİL MÜŞTERİ ANALİZİ ---
+    # --- SEKME 1: TEKİL MÜŞTERİ ANALİZİ ---
     with tab1:
         st.subheader("Müşteri Parametreleri")
         col_form1, col_form2, col_form3 = st.columns(3)
@@ -114,65 +116,56 @@ def main_dashboard():
             }
 
             with st.spinner("Yapay Zeka Hesaplarken Lütfen Bekleyin..."):
-                # ARTIK API İSTEĞİ ATMIYORUZ, TAHMİNİ BURADA YAPIYORUZ
-                result = make_prediction(customer_data)
-                churn_probability = result["churn_ihtimali"] * 100
-                st.session_state.current_customer = customer_data
-                st.session_state.base_risk = churn_probability
+                # REST API İSTEĞİ
+                result = make_prediction_api(customer_data)
 
-                customer_value = balance + (est_salary * 0.20)
-                expected_loss = customer_value * (churn_probability / 100)
+                if result and "error" not in result:
+                    churn_probability = result["churn_ihtimali"] * 100
+                    st.session_state.current_customer = customer_data
+                    st.session_state.base_risk = churn_probability
 
-                st.write("---")
-                st.subheader("💰 Finansal Etki Analizi (CLTV)")
-                fin_col1, fin_col2, fin_col3 = st.columns(3)
-                fin_col1.metric(label="Müşterinin Bankaya Değeri", value=f"€{customer_value:,.2f}")
-                fin_col2.metric(label="Ayrılma İhtimali", value=f"%{churn_probability:.1f}")
-                fin_col3.metric(label="Beklenen Finansal Kayıp", value=f"€{expected_loss:,.2f}", delta="- Risk Tutarı", delta_color="inverse")
+                    customer_value = balance + (est_salary * 0.20)
+                    expected_loss = customer_value * (churn_probability / 100)
 
-                st.write("---")
-                res_col1, res_col2 = st.columns([1, 1])
-                with res_col1:
-                    st.subheader("📊 Model Çıktısı")
-                    st.metric(label="Risk Kategorisi", value=result["risk_seviyesi"])
-                    
-                    # SHAP ANALİZİ (Önceden yaptığımız düzeltmelerle)
-                    if local_model is not None:
-                        st.markdown("### 💡 Neden Analizi (SHAP)")
-                        df_input_shap = pd.DataFrame([customer_data])
-                        df_input_shap = pd.get_dummies(df_input_shap, drop_first=True)
-                        for col in expected_features:
-                            if col not in df_input_shap.columns: df_input_shap[col] = 0
-                        df_input_shap = df_input_shap[expected_features]
-                        scaled_input_shap = local_scaler.transform(df_input_shap)
-                        
-                        explainer = shap.TreeExplainer(local_model)
-                        shap_values = explainer.shap_values(scaled_input_shap, check_additivity=False)
-                        
-                        if isinstance(shap_values, list): shap_vals = shap_values[1][0]
-                        else: shap_vals = shap_values[0, :, 1] if len(shap_values.shape) == 3 else shap_values[0]
-                        
-                        shap_vals = np.array(shap_vals).flatten()
-                        sort_inds = np.argsort(np.abs(shap_vals))
-                        sorted_features = np.array(expected_features)[sort_inds]
-                        sorted_shap = shap_vals[sort_inds]
-                        colors = ['salmon' if float(val) > 0 else 'lightgreen' for val in sorted_shap]
+                    st.write("---")
+                    st.subheader("💰 Finansal Etki Analizi (CLTV)")
+                    fin_col1, fin_col2, fin_col3 = st.columns(3)
+                    fin_col1.metric(label="Müşterinin Bankaya Değeri", value=f"€{customer_value:,.2f}")
+                    fin_col2.metric(label="Ayrılma İhtimali", value=f"%{churn_probability:.1f}")
+                    fin_col3.metric(label="Beklenen Finansal Kayıp", value=f"€{expected_loss:,.2f}", delta="- Risk Tutarı", delta_color="inverse")
 
-                        fig_shap = go.Figure(go.Bar(x=sorted_shap, y=sorted_features, orientation='h', marker_color=colors))
-                        fig_shap.update_layout(xaxis_title="<- Riski Düşürenler | Riski Artıranlar ->", margin=dict(l=0, r=0, t=0, b=0), height=300)
-                        st.plotly_chart(fig_shap, use_container_width=True)
+                    st.write("---")
+                    res_col1, res_col2 = st.columns([1, 1])
+                    with res_col1:
+                        st.subheader("📊 Model Çıktısı")
+                        st.metric(label="Risk Kategorisi", value=result["risk_seviyesi"])
 
-                with res_col2:
-                    fig_gauge = go.Figure(go.Indicator(
-                        mode="gauge+number", value=churn_probability,
-                        title={'text': "Ayrılma İhtimali (%)", 'font': {'size': 24}},
-                        gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "black"},
-                               'steps': [{'range': [0, 40], 'color': "lightgreen"},
-                                         {'range': [40, 70], 'color': "gold"},
-                                         {'range': [70, 100], 'color': "salmon"}]}))
-                    st.plotly_chart(fig_gauge, use_container_width=True)
+                        # SHAP ANALİZİ (API'den dönen verilerle çizilir)
+                        if "shap_degerleri" in result:
+                            st.markdown("### 💡 Neden Analizi (SHAP)")
+                            shap_dict = result["shap_degerleri"]
 
-    # --- SEKM 2: WHAT-IF SİMÜLATÖRÜ ---
+                            # Sort for visualization
+                            sorted_shap = sorted(shap_dict.items(), key=lambda x: abs(x[1]))
+                            features = [k for k, v in sorted_shap]
+                            values = [v for k, v in sorted_shap]
+                            colors = ['salmon' if float(val) > 0 else 'lightgreen' for val in values]
+
+                            fig_shap = go.Figure(go.Bar(x=values, y=features, orientation='h', marker_color=colors))
+                            fig_shap.update_layout(xaxis_title="<- Riski Düşürenler | Riski Artıranlar ->", margin=dict(l=0, r=0, t=0, b=0), height=300)
+                            st.plotly_chart(fig_shap, use_container_width=True)
+
+                    with res_col2:
+                        fig_gauge = go.Figure(go.Indicator(
+                            mode="gauge+number", value=churn_probability,
+                            title={'text': "Ayrılma İhtimali (%)", 'font': {'size': 24}},
+                            gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "black"},
+                                   'steps': [{'range': [0, 40], 'color': "lightgreen"},
+                                             {'range': [40, 70], 'color': "gold"},
+                                             {'range': [70, 100], 'color': "salmon"}]}))
+                        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    # --- SEKME 2: WHAT-IF SİMÜLATÖRÜ ---
     with tab2:
         if st.session_state.current_customer is not None:
             cust = st.session_state.current_customer
@@ -189,52 +182,41 @@ def main_dashboard():
             if st.button("🔄 Değişim Senaryosunu Simüle Et", type="primary"):
                 sim_data = cust.copy()
                 sim_data.update({"Balance": new_balance, "IsActiveMember": new_active, "HasCrCard": new_crcard, "NumOfProducts": new_products})
-                
-                # SİMÜLASYONDA DA YEREL TAHMİN KULLANILIYOR
-                res_sim = make_prediction(sim_data)
-                new_risk = res_sim["churn_ihtimali"] * 100
-                diff = new_risk - base_risk
-                if diff < 0: st.metric(label="Yeni Risk", value=f"%{new_risk:.1f}", delta=f"{diff:.1f} Puan", delta_color="normal")
-                else: st.metric(label="Yeni Risk", value=f"%{new_risk:.1f}", delta=f"+{diff:.1f} Puan", delta_color="inverse")
+
+                # API İSTEĞİ (Simülasyon)
+                res_sim = make_prediction_api(sim_data)
+                if res_sim and "error" not in res_sim:
+                    new_risk = res_sim["churn_ihtimali"] * 100
+                    diff = new_risk - base_risk
+                    if diff < 0: st.metric(label="Yeni Risk", value=f"%{new_risk:.1f}", delta=f"{diff:.1f} Puan", delta_color="normal")
+                    else: st.metric(label="Yeni Risk", value=f"%{new_risk:.1f}", delta=f"+{diff:.1f} Puan", delta_color="inverse")
         else:
             st.warning("Lütfen önce 'Tekil Müşteri Analizi' sekmesinden bir analiz yapın.")
 
-    # --- SEKM 3: TOPLU MÜŞTERİ YÜKLEME ---
+    # --- SEKME 3: TOPLU MÜŞTERİ YÜKLEME ---
     with tab3:
         st.subheader("📁 Finansal Odaklı Toplu Analiz")
         uploaded_file = st.file_uploader("Dosya Seçin", type=["csv"])
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
             if st.button("🚀 Tüm Listeyi Analiz Et ve Önceliklendir", use_container_width=True):
-                progress_bar = st.progress(0)
-                results_list = []
-                total_rows = len(df)
-                for index, row in df.iterrows():
-                    cust_row = {
-                        "CreditScore": int(row["CreditScore"]), "Geography": str(row["Geography"]), "Gender": str(row["Gender"]),
-                        "Age": int(row["Age"]), "Tenure": int(row["Tenure"]), "Balance": float(row["Balance"]),
-                        "NumOfProducts": int(row["NumOfProducts"]), "HasCrCard": int(row["HasCrCard"]),
-                        "IsActiveMember": int(row["IsActiveMember"]), "EstimatedSalary": float(row["EstimatedSalary"])
-                    }
-                    # TOPLU ANALİZDE DE YEREL TAHMİN KULLANILIYOR
-                    res_batch = make_prediction(cust_row)
-                    churn_prob = res_batch["churn_ihtimali"]
-                    c_value = cust_row["Balance"] + (cust_row["EstimatedSalary"] * 0.20)
-                    exp_loss = c_value * churn_prob
-                    results_list.append({
-                        "Müşteri ID": row.get("CustomerId", index), "Risk (%)": round(churn_prob * 100, 2),
-                        "Risk Seviyesi": res_batch["risk_seviyesi"], "Müşteri Değeri (€)": round(c_value, 2),
-                        "Beklenen Kayıp (€)": round(exp_loss, 2)
-                    })
-                    progress_bar.progress((index + 1) / total_rows)
+                with st.spinner("Tüm müşteri portföyü analiz ediliyor..."):
+                    # Veriyi liste formatına çevir
+                    customers_list = df.to_dict(orient="records")
 
-                results_df = pd.DataFrame(results_list).sort_values(by="Beklenen Kayıp (€)", ascending=False).reset_index(drop=True)
-                def color_risk(val): return f"color: {'red' if 'Yüksek' in str(val) else 'orange' if 'Orta' in str(val) else 'green'}"
-                styled_df = results_df.style.map(color_risk, subset=['Risk Seviyesi']).format({"Müşteri Değeri (€)": "{:,.2f}", "Beklenen Kayıp (€)": "{:,.2f}"})
-                st.success("✅ Analiz tamamlandı!")
-                st.dataframe(styled_df, use_container_width=True)
-                csv = results_df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Analiz Raporunu İndir", data=csv, file_name='finansal_churn_raporu.csv', mime='text/csv')
+                    # TEK BİR TOPLU API İSTEĞİ
+                    res_batch = make_batch_prediction_api(customers_list)
+
+                    if res_batch and res_batch.get("status") == "success":
+                        results_df = pd.DataFrame(res_batch["results"]).sort_values(by="Beklenen Kayıp (€)", ascending=False).reset_index(drop=True)
+                        def color_risk(val): return f"color: {'red' if 'Yüksek' in str(val) else 'orange' if 'Orta' in str(val) else 'green'}"
+                        styled_df = results_df.style.map(color_risk, subset=['Risk Seviyesi']).format({"Müşteri Değeri (€)": "{:,.2f}", "Beklenen Kayıp (€)": "{:,.2f}"})
+                        st.success("✅ Analiz tamamlandı!")
+                        st.dataframe(styled_df, use_container_width=True)
+                        csv = results_df.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Analiz Raporunu İndir", data=csv, file_name='finansal_churn_raporu.csv', mime='text/csv')
+                    else:
+                        st.error("Toplu analiz başarısız oldu.")
 
 # --- AKIŞ KONTROLÜ ---
 if not st.session_state.logged_in:
