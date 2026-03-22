@@ -1,11 +1,12 @@
-streamlit
-fastapi
-uvicorn
+flask
+xgboost
+imbalanced-learn
+scikit-learn
 pandas
 numpy
-scikit-learn
-pydantic
 joblib
 shap
+streamlit
 plotly
 requests
+gunicorn

@@ -1,0 +1,10 @@
+# Ignore ML artifacts
+data/
+*.pkl
+*.csv
+
+# Python
+__pycache__/
+*.pyc
+.env
+.streamlit/
