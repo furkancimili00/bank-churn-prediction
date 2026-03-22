@@ -10,3 +10,4 @@ streamlit
 plotly
 requests
 gunicorn
+matplotlib
