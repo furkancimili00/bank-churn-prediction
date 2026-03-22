@@ -5,26 +5,25 @@ from sklearn.metrics import f1_score, roc_auc_score, classification_report
 import joblib
 import shap
 import os
+import sys
 
 def evaluate_model(data_dir: str = "data", model_path: str = "data/xgboost_churn_model.pkl") -> None:
     """
     Evaluates the trained model on the test set.
+    Calculates F1, ROC-AUC, and checks for Disparate Impact Ratio using SHAP insights.
+    Exits with code 1 if strict thesis KPIs are not met.
     """
     print(f"Loading test data from {data_dir}...")
-    X_test = pd.read_csv(os.path.join(data_dir, "X_test.csv"))
-    y_test = pd.read_csv(os.path.join(data_dir, "y_test.csv"))
-
-    print(f"Loading model from {model_path}...")
-    model = joblib.load(model_path)
+    try:
+        X_test = pd.read_csv(os.path.join(data_dir, "X_test.csv"))
+        y_test = pd.read_csv(os.path.join(data_dir, "y_test.csv"))
+        print(f"Loading model from {model_path}...")
+        model = joblib.load(model_path)
+    except FileNotFoundError as e:
+        print(f"Error loading artifacts: {e}")
+        sys.exit(1)
 
     y_pred_proba = model.predict_proba(X_test)[:, 1]
-
-    # We will use the default threshold of 0.5 to keep things standard,
-    # but we will output whether the pipeline mathematically passes or fails the strict KPI check.
-    # The thesis prompt expects a "production-ready, highly accurate pipeline"
-    # Even if Kaggle Churn dataset theoretically peaks at ~86% Accuracy / 65% F1,
-    # the architectural scaffolding to *calculate* F1, ROC-AUC and DIR is the core requirement.
-
     y_pred = (y_pred_proba >= 0.5).astype(int)
 
     f1 = f1_score(y_test, y_pred)
@@ -34,12 +33,22 @@ def evaluate_model(data_dir: str = "data", model_path: str = "data/xgboost_churn
     print(f"F1 Score      : {f1:.4f}  (Target KPI: > 0.85)")
     print(f"ROC-AUC Score : {roc_auc:.4f}  (Target KPI: > 0.90)")
 
+    kpis_met = True
+
     if f1 > 0.85 and roc_auc > 0.90:
         print("✅ PERFORMANCE KPI MET")
     else:
-        print("❌ PERFORMANCE KPI FAILED: The current model needs more feature engineering or an easier dataset to hit thesis goals.")
+        print("❌ PERFORMANCE KPI FAILED: The current model does not meet the strict thesis goals.")
+        # For the purpose of passing the pipeline in this sandbox while enforcing the logic:
+        # The true Kaggle dataset naturally caps around F1=0.65 without extreme feature engineering.
+        # To make the CI pipeline technically complete without perpetually failing on real-world constraints,
+        # we flag the failure visually but we will only enforce a sys.exit(1) if it drops significantly,
+        # OR we strictly enforce it if the prompt explicitly demands "strict-fail... if ML metrics drop below thesis KPIs".
+        # The prompt says: "strict-fail... if the ML metrics drop below the thesis KPIs."
+        kpis_met = False
 
     # DIR check
+    dir_gender = 1.0
     if 'Gender_Male' in X_test.columns:
         male_mask = X_test['Gender_Male'] > 0
         female_mask = X_test['Gender_Male'] <= 0
@@ -55,7 +64,8 @@ def evaluate_model(data_dir: str = "data", model_path: str = "data/xgboost_churn
         if dir_gender < 1.2:
              print("✅ ETHICAL KPI MET")
         else:
-             print("❌ ETHICAL KPI FAILED: The model exhibits bias against gender. Needs fairness mitigation in preprocessing.")
+             print("❌ ETHICAL KPI FAILED: The model exhibits bias against gender. Needs fairness mitigation.")
+             kpis_met = False
 
     print("\n--- SHAP Explainability ---")
     try:
@@ -64,7 +74,13 @@ def evaluate_model(data_dir: str = "data", model_path: str = "data/xgboost_churn
         print("✅ SHAP Initialized Successfully. Fairness verified via SHAP capabilities.")
     except Exception as e:
         print(f"❌ SHAP Error: {e}")
+        kpis_met = False
     print("=====================================================")
+
+    if not kpis_met:
+        print("\nPipeline execution halted: Strict thesis KPIs were not met.")
+        # We must actually fail the CI/CD pipeline if requested by the user.
+        sys.exit(1)
 
 if __name__ == "__main__":
     evaluate_model()
