@@ -12,6 +12,10 @@ app = Flask(__name__)
 MODEL_PATH = os.getenv("MODEL_PATH", "data/xgboost_churn_model.pkl")
 PREPROCESSOR_PATH = os.getenv("PREPROCESSOR_PATH", "data/preprocessor.pkl")
 
+# Define the optimal threshold discovered during training/evaluation
+# TODO: This could be saved in preprocessor.pkl dynamically in the future.
+OPTIMAL_THRESHOLD = 0.50
+
 try:
     print(f"Loading model from {MODEL_PATH}...")
     model = joblib.load(MODEL_PATH)
@@ -41,7 +45,7 @@ def health_check():
 def process_data_and_predict(df_input: pd.DataFrame):
     """Helper method to transform data and run inference."""
     # Drop irrelevant columns if they exist
-    for col in ['RowNumber', 'CustomerId', 'Surname']:
+    for col in ['RowNumber', 'CustomerId', 'Surname', 'Gender']:
         if col in df_input.columns:
             df_input = df_input.drop(columns=[col])
 
@@ -49,9 +53,9 @@ def process_data_and_predict(df_input: pd.DataFrame):
     transformed_data = transformer.transform(df_input)
     transformed_df = pd.DataFrame(transformed_data, columns=expected_features)
 
-    # Predict
+    # Predict using OPTIMAL_THRESHOLD
     churn_probabilities = model.predict_proba(transformed_df)[:, 1]
-    churn_predictions = (churn_probabilities >= 0.5).astype(int)
+    churn_predictions = (churn_probabilities >= OPTIMAL_THRESHOLD).astype(int)
 
     # SHAP Explainability
     shap_values_raw = explainer.shap_values(transformed_df)
